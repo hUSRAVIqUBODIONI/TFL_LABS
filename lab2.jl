@@ -2,7 +2,7 @@ alphabet = ("L","R")
 sufix_list = Vector{String}(["e"])
 prefix_list = Vector{String}(["e","L","R"])
 array_3d = fill("-", (3,1))
-status = false #если false продолжать строить таблицу #true мы всё совпало
+status = true #если false продолжать строить таблицу #true мы всё совпало
 itorations = 2
 
 
@@ -11,12 +11,16 @@ function main()
     global itorations
     fill_table() #Заполняем первоначальную таблицу
     
-        eqvivolent()
+    while status
+        if eqvivolent() ==0
+            return
+        end
         Add_Prefix(itorations,2,"R","L")
         Add_Prefix(itorations,2,"L","R")
         fill_table(length(prefix_list)-3)
         Print_Table()
         itorations +=1
+        end
     
 end
 
@@ -56,15 +60,15 @@ end
 function fill_table(start_index,len_of_Newtable)
     global array_3d
     pl = length(prefix_list)
-    println()
+   
     array = fill("-", (pl,len_of_Newtable))
-    println(array)
+   
     for p_id in 1:pl, s_id in 1:len_of_Newtable
         array[p_id,s_id] = MemberShip(prefix_list[p_id],sufix_list[start_index+s_id])
     end
-    println(array_3d)
+  
     array_3d = hcat(array_3d,array)
-    println(array_3d)
+   
     
 end
 
@@ -100,9 +104,10 @@ function eqvivolent()
     ConPrimer = readline()
     if ConPrimer == "Finish"
         status = true
-        return
+        return 0
     else
         Add_ContPrimer(ConPrimer)  # Assuming this function is defined elsewhere
+        return 1
     end
 end
 
@@ -111,11 +116,13 @@ end
 function Add_ContPrimer(ConPrimer)
     last_index = length(sufix_list)      #Сохраняем старую длину суффиксов
     for l in 1:length(ConPrimer)
-        push!(sufix_list,last(ConPrimer,l))   # Добавляем все суффиксы контр-примера в списаок суффиксов LLRL = L, RL, LRL, LLRL
-    end
-
+       
+        if (!in(a,sufix_list))
+            push!(sufix_list,a)  # Добавляем все суффиксы контр-примера в списаок суффиксов LLRL = L, RL, LRL, LLRL
+        end
+    end 
     fill_table(last_index,length(ConPrimer))
-    
+
 end
 
 
