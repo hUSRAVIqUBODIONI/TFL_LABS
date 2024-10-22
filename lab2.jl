@@ -3,23 +3,29 @@ sufix_list = Vector{String}(["e"])
 prefix_list = Vector{String}(["e","L","R"])
 array_3d = fill("-", (3,1))
 status = true #если false продолжать строить таблицу #true мы всё совпало
+filename = ""
+current_line = 1
 itorations = 2
 
 
 
 function main()
-    global itorations
+    global itorations, filename
+    filename = readline()
     fill_table() #Заполняем первоначальную таблицу
-    
+
     while status
         if eqvivolent() ==0
             return
         end
         Add_Prefix(itorations,2,"R","L")
         Add_Prefix(itorations,2,"L","R")
-        fill_table(length(prefix_list)-3)
-        Print_Table()
         itorations +=1
+        Add_Prefix(itorations,2,"R","L")
+        Add_Prefix(itorations,2,"L","R")
+        itorations +=1
+        fill_table(length(prefix_list)-7)
+        Print_Table()
         end
     
 end
@@ -75,10 +81,10 @@ end
 function fill_table(start_index)
     global array_3d
     sl = length(sufix_list)
-    array = fill("-",(4,sl))
+    array = fill("-",(8,sl))
     index = 1
   
-    for p_id in start_index:start_index+3
+    for p_id in start_index:start_index+7
         for s_id in 1:sl
         array[index,s_id] = MemberShip(prefix_list[p_id],sufix_list[s_id])
         end
@@ -89,24 +95,27 @@ end
 
 
 function MemberShip(prefix,sufix)
-    println("Is ",prefix," and ",sufix," in Lenguage?") 
-    name = readline() 
-    return name
+    global current_line
+    result = read_file()
+    current_line+=1
+    return result
 end
 
 
 
 
 function eqvivolent()
-    global status  # Access the global status variable
-    Print_Table()  
-    println("Is it OK? (Type 'Finish' to confirm)")
-    ConPrimer = readline()
+    global status,current_line  # Access the global status variable
+    ConPrimer = read_file()
+    current_line +=1
     if ConPrimer == "Finish"
         status = true
         return 0
     else
+        println(ConPrimer)
+        Print_Table()
         Add_ContPrimer(ConPrimer)  # Assuming this function is defined elsewhere
+
         return 1
     end
 end
@@ -116,7 +125,7 @@ end
 function Add_ContPrimer(ConPrimer)
     last_index = length(sufix_list)      #Сохраняем старую длину суффиксов
     for l in 1:length(ConPrimer)
-       
+       a = last(ConPrimer,l)
         if (!in(a,sufix_list))
             push!(sufix_list,a)  # Добавляем все суффиксы контр-примера в списаок суффиксов LLRL = L, RL, LRL, LLRL
         end
@@ -143,5 +152,16 @@ function Print_Table()
     end
 end
 
+function read_file()
+    open(filename, "r") do file
+        lines = readlines(file)  # читаем все строки в массив
+        if current_line <= length(lines)
+            return lines[current_line]
+        end
+    end
+end
+
 
 main()
+
+
