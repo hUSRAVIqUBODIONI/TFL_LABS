@@ -2,98 +2,164 @@ using HTTP
 using JSON
 
 
-alphabet = ("L","R")
-sufix_list = Vector{String}(["ε"])
-prefix_list = Vector{String}(["ε","L","R"])
-array_3d = fill(0, (3,1))
-status = true #если false продолжать строить таблицу #true мы всё совпало
-filename = ""
-current_line = 1
-i = 1
-itorations = 2
+mutable struct Table
+    main_prefix::Vector{String}
+    non_main_prefix::Vector{String}
+    suffix::Vector{String}
+    array::Matrix{Int64}
+    alphabet::Vector{String}
+    contrs::Vector{String}
+end
 
-
+function Table()
+    return Table(Vector{String}(["ε"]),Vector{String}(["L","R"]),Vector{String}(["ε"]),fill(0,(3,1)),Vector{String}(["L","R"]),Vector{String}([]))
+end
 
 function main()
-    global itorations
-    fill_table() #Заполняем первоначальную таблицу
-    Print_Table()
-    while status
-        if eqvivolent() ==0
-            return
+    t = Table()
+    fill_table(t)
+    while true
+        if !Equivalent(t)
+            PrintTable(t)
+            return 0
         end
-        Add_Prefix(itorations,2,"R","L")
-        Add_Prefix(itorations,2,"L","R")
-        itorations +=1
-        Add_Prefix(itorations,2,"R","L")
-        Add_Prefix(itorations,2,"L","R")
-        itorations +=1
-        fill_table(length(prefix_list)-7)
-        Print_Table()
-        end
-    
+        Polnota(t) 
+        Fill_table_prefix(t,Add_Prefix(t))
+        Polnota(t)
+    end
 end
 
-function Add_Prefix(n, count,first_letter,last_letter)
-    global prefix_list
-    if n == 0
-        return [""]
-    end
-    
-    combinations = String[]
-    for combo in Add_Prefix(n - 1, count,first_letter,last_letter)
-        if length(combinations) < count
-            push!(combinations, first_letter * combo)
-           
-        end
-        if length(combinations) < count
-            push!(combinations, last_letter * combo)
-         
-        end
-        if length(combinations) >= count
-            break
+function Add_Prefix(t::Table)
+    new_prefix =[]
+    for i in t.main_prefix
+        for j in t.alphabet 
+            if i == "ε"
+                word = j
+            else
+                word = i*j
+            end
+            if word ∉ t.main_prefix && word ∉ t.non_main_prefix
+                push!(new_prefix,word)
+            end
         end
     end
-    prefix_list = union(prefix_list,combinations)
-    return combinations
+    return new_prefix
 end
 
-function fill_table()
-    pl = length(prefix_list)
-    sl = length(sufix_list)
-    for p_id in 1:pl,s_id in 1:sl
-        array_3d[p_id,s_id] = MemberShip(prefix_list[p_id],sufix_list[s_id])
+
+
+function fill_table(t::Table)
+    for i in 1:1
+        t.array[i,1] = MemberShip(t.main_prefix[i],t.suffix[1])
     end
-    
+    for i in 1:2
+        t.array[i+1,1] = MemberShip(t.non_main_prefix[i],t.suffix[1])
+    end
 end
 
-function fill_table(start_index,len_of_Newtable)
-    global array_3d
-    pl = length(prefix_list)
-   
-    array = fill(0, (pl,len_of_Newtable))
-   
-    for p_id in 1:pl, s_id in 1:len_of_Newtable
-        array[p_id,s_id] = MemberShip(prefix_list[p_id],sufix_list[start_index+s_id])
+function Fill_table_prefix(t::Table,new_prefixes)
+    sl = length(t.suffix)
+    npl = length(new_prefixes)
+    temp = fill(0,(npl,sl))
+    for i in 1:npl, j in 1:sl 
+        temp[i,j] = MemberShip(new_prefixes[i],t.suffix[j])
     end
-  
-    array_3d = hcat(array_3d,array)
-    
+    t.non_main_prefix = union(t.non_main_prefix,new_prefixes)
+    t.array = vcat(t.array,temp) 
 end
 
-function fill_table(start_index)
-    global array_3d
-    sl = length(sufix_list)
-    array = fill(0,(8,sl))
-    index = 1
-  
-    for p_id in start_index:start_index+7
-        for s_id in 1:sl
-        array[index,s_id] = MemberShip(prefix_list[p_id],sufix_list[s_id])
+function PrintTable(t::Table)
+    lmp=length(t.main_prefix)
+    lnp=length(t.non_main_prefix)
+    ls = length(t.suffix)
+    print("  ")
+    for b in t.suffix
+        print(b," ")
+    end
+    println()  # Move to the next line
+    for i in 1:lmp
+        print(t.main_prefix[i]," ")
+        for j in 1:ls
+            print(t.array[i,j]," ")
         end
+        println()
+    end
+    for i in 1:lnp
+        print(t.non_main_prefix[i]," ")
+        for j in 1:ls
+            print(t.array[i+lmp,j]," ")
+        end
+        println()
+    end
+end
+
+function Polnota(t::Table)
+    lmp =length(t.main_prefix)
+    lnp = length(t.non_main_prefix)
+    fordel =[]
+    check =0
+    for i in lmp+1:lnp+lmp
+        e = true
+        for j in 1:lmp+check
+            if (t.array[i,:] == t.array[j,:])
+               
+                e = false
+                break
+            end
+        end
+        if e
+            push!(fordel,i-lmp)
+            t.array = insert_row(t.array,i,lmp+check+1)
+            check+=1
+        end
+    end
+    for (i,v) in pairs(fordel)
+        push!(t.main_prefix,t.non_main_prefix[v-(i-1)])
+        deleteat!(t.non_main_prefix,v-(i-1))
+    end
+end
+
+function insert_row(t, i, insert_position)
+    # Сохраняем строку, которую нужно вставить и преобразуем в матрицу
+    row_to_insert = t[i, :]
+    # Вставляем строку на указанную позицию
+    t = vcat(t[1:insert_position-1, :], row_to_insert', t[insert_position:end, :])
+    t = vcat(t[1:i, :], t[i+2:end, :])
+    return t
+end
+
+function Contrprimer(t::Table,start_suffix,contr)
+    println(contr)
+    for l in 1:length(contr)
+       a = last(contr,l)
+        if (!in(a,t.suffix))
+            push!(t.suffix,a)  # Добавляем все суффиксы контр-примера в списаок суффиксов LLRL = L, RL, LRL, LLR
+        end
+    end 
+    fill_table(t,start_suffix)
+end
+
+function fill_table(t::Table,start_suffix)
+    lmp = length(t.main_prefix)  
+    lnp = length(t.non_main_prefix)
+    ls = length(t.suffix)
+    temp = fill(0,(lmp+lnp,ls-start_suffix+1))
+    
+    for i in 1:lmp
+        index =1
+        for j in start_suffix:ls
+        temp[i,index] =  MemberShip(t.main_prefix[i],t.suffix[j])
         index +=1
+        end
     end
-    array_3d = vcat(array_3d,array)
+    for i in 1:lnp
+        index =1
+        for j in start_suffix:ls
+        temp[lmp+i,index] =  MemberShip(t.non_main_prefix[i],t.suffix[j])
+        index +=1
+        end
+    end
+    t.array = hcat(t.array,temp)
 end
 
 
@@ -121,105 +187,50 @@ function MemberShip(pref, suf)
     # Проверяем ответ
     if response.status == 200
         parsed_response = JSON.parse(String(response.body))
-        return parsed_response["response"]  # Возвращаем только значение поля "response"
-    else
-        return false  # Или любое значение по умолчанию в случае ошибки
+        if parsed_response["response"]
+            return 1
+        else
+            return 0 
+        end
     end
 end
 
-
-function eqvivolent()
-    global i
-    pl = length(prefix_list)
-    if i!=1
-        main_prefixes = prefix_list[1:pl-8]  # Например, первые три элемента
-        non_main_prefixes = prefix_list[pl-7:end]  # Остальные элементы
-    else
-        main_prefixes = ["ε"]
-        non_main_prefixes = ["L","R"]
-        i+=1
-    end
-    println("main_prefixes :", (join(main_prefixes," ")))
-    println("non_main_prefixes : ",join(non_main_prefixes," "))
-    println("suffixes : ",join(sufix_list," "))
-    
-    flat_array = reduce(vcat, eachrow(array_3d))
-
+function Equivalent(t::Table)
     # Объединяем элементы в строку, разделяя пробелом
-    table_string = join(flat_array, " ")
-    println("table : ",table_string)
+    table_string = join(t.array', " ")
     # Создаем JSON объект для отправки
     data = Dict(
-        "main_prefixes" => join(main_prefixes," "),
-        "non_main_prefixes" => join(non_main_prefixes," "),
-        "suffixes" => join(sufix_list," "),
+        "main_prefixes" => join(t.main_prefix," "),
+        "non_main_prefixes" => join(t.non_main_prefix," "),
+        "suffixes" => join(t.suffix," "),
         "table" => table_string
     )
-
     # Преобразуем в JSON
     json_data = JSON.json(data)
-
     # Выполняем POST-запрос
     url = "http://localhost:8095/checkTable"  # Замените на ваш URL
     response = HTTP.post(url, 
                          body=json_data, 
                          headers=["Content-Type" => "application/json"])
     
+
+
     # Проверяем ответ
     if response.status == 200
         parsed_response = JSON.parse(String(response.body))
-        println(parsed_response["response"],"\t",parsed_response["type"])  # Получаем значение из поля "response"
-        if parsed_response["response"] == NaN || parsed_response["type"]==false #|| in(parsed_response["response"],sufix_list)
-            return 0
+        if isnothing(parsed_response["response"])
+            println("Finish!!!")
+            return false
+        elseif in(parsed_response["response"],t.contrs)
+            
+            return true
+        else
+            push!(t.contrs,parsed_response["response"])
+            Contrprimer(t,length(t.suffix)+1,parsed_response["response"])
+            return true
         end
-        Add_ContPrimer(parsed_response["response"])
-        return 1
     else
         println("Ошибка: $(response.status)")
     end
 end
-
-
-
-function Add_ContPrimer(ConPrimer)
-    last_index = length(sufix_list)      #Сохраняем старую длину суффиксов
-    for l in 1:length(ConPrimer)
-       a = last(ConPrimer,l)
-        if (!in(a,sufix_list))
-            push!(sufix_list,a)  # Добавляем все суффиксы контр-примера в списаок суффиксов LLRL = L, RL, LRL, LLRL
-        end
-    end 
-    fill_table(last_index,length(ConPrimer))
-
-end
-
-
-function Print_Table()
-    print("  ")
-    for b in sufix_list
-        print(b," ")
-    end
-    println()  # Move to the next line
-
-    # Print the rows
-    for (i, a) in enumerate(prefix_list)
-        print(a," ")  # Print the element from A
-        for (j,_) in enumerate(sufix_list)
-            print(array_3d[i,j]," ")
-        end
-        println()  # Move to the next line
-    end
-end
-
-function read_file()
-    open(filename, "r") do file
-        lines = readlines(file)  # читаем все строки в массив
-        if current_line <= length(lines)
-            return lines[current_line]
-        end
-    end
-end
-
 main()
-
-
