@@ -1,5 +1,7 @@
 using HTTP
 using JSON
+using Dates
+
 
 
 mutable struct Table
@@ -9,22 +11,38 @@ mutable struct Table
     array::Matrix{Int64}
     alphabet::Vector{String}
     contrs::Vector{String}
+    WordsLenguage::Dict{String, Int}
+
 end
 
 function Table()
-    return Table(Vector{String}(["ε"]),Vector{String}(["L","R"]),Vector{String}(["ε"]),fill(0,(3,1)),Vector{String}(["L","R"]),Vector{String}([]))
+    return Table(
+        ["ε"],               # main_prefix
+        ["L", "R"],          # non_main_prefix
+        ["ε"],               # suffix
+        fill(0, (3, 1)),     # array
+        ["L", "R"],          # alphabet
+        [],                  # contrs
+        Dict{String, Int}()  # WordsLenguage
+    )
 end
 
 function main()
+    start_time = now()
     t = Table()
     fill_table(t)
     while true
         if !Equivalent(t)
             PrintTable(t)
+            end_time = now()
+            elapsed_time = end_time - start_time
+            println("Elapsed time: $elapsed_time")
             return 0
         end
-        Polnota(t) 
-        Fill_table_prefix(t,Add_Prefix(t))
+        for i in 1:3
+            Polnota(t) 
+            Fill_table_prefix(t,Add_Prefix(t))       
+        end
         Polnota(t)
     end
 end
@@ -50,10 +68,10 @@ end
 
 function fill_table(t::Table)
     for i in 1:1
-        t.array[i,1] = MemberShip(t.main_prefix[i],t.suffix[1])
+        t.array[i,1] = MemberShip(t,t.main_prefix[i],t.suffix[1])
     end
     for i in 1:2
-        t.array[i+1,1] = MemberShip(t.non_main_prefix[i],t.suffix[1])
+        t.array[i+1,1] = MemberShip(t,t.non_main_prefix[i],t.suffix[1])
     end
 end
 
@@ -62,7 +80,7 @@ function Fill_table_prefix(t::Table,new_prefixes)
     npl = length(new_prefixes)
     temp = fill(0,(npl,sl))
     for i in 1:npl, j in 1:sl 
-        temp[i,j] = MemberShip(new_prefixes[i],t.suffix[j])
+        temp[i,j] = MemberShip(t,new_prefixes[i],t.suffix[j])
     end
     t.non_main_prefix = union(t.non_main_prefix,new_prefixes)
     t.array = vcat(t.array,temp) 
@@ -129,7 +147,6 @@ function insert_row(t, i, insert_position)
 end
 
 function Contrprimer(t::Table,start_suffix,contr)
-    println(contr)
     for l in 1:length(contr)
        a = last(contr,l)
         if (!in(a,t.suffix))
@@ -148,14 +165,14 @@ function fill_table(t::Table,start_suffix)
     for i in 1:lmp
         index =1
         for j in start_suffix:ls
-        temp[i,index] =  MemberShip(t.main_prefix[i],t.suffix[j])
+        temp[i,index] =  MemberShip(t,t.main_prefix[i],t.suffix[j])
         index +=1
         end
     end
     for i in 1:lnp
         index =1
         for j in start_suffix:ls
-        temp[lmp+i,index] =  MemberShip(t.non_main_prefix[i],t.suffix[j])
+        temp[lmp+i,index] =  MemberShip(t,t.non_main_prefix[i],t.suffix[j])
         index +=1
         end
     end
@@ -163,7 +180,7 @@ function fill_table(t::Table,start_suffix)
 end
 
 
-function MemberShip(pref, suf)
+function MemberShip(t::Table,pref, suf)
     # Обрабатываем случай, когда префикс или суффикс равен "ε"
     if pref == "ε" && suf == "ε"
         word = "ε"  # Оба "ε", возвращаем пустую строку
@@ -174,7 +191,9 @@ function MemberShip(pref, suf)
     else
         word = pref * suf  # Соединяем префикс и суффикс
     end
-
+    if haskey(t.WordsLenguage,word)
+        return t.WordsLenguage[word]
+    end
     # Создаем JSON объект для отправки
     data = JSON.json(Dict("word" => word))
 
@@ -183,19 +202,21 @@ function MemberShip(pref, suf)
     response = HTTP.post(url, 
                          body=data, 
                          headers=["Content-Type" => "application/json"])
-    
     # Проверяем ответ
     if response.status == 200
         parsed_response = JSON.parse(String(response.body))
         if parsed_response["response"]
+            t.WordsLenguage[word] = 1
             return 1
         else
+            t.WordsLenguage[word] = 0
             return 0 
         end
     end
 end
 
 function Equivalent(t::Table)
+ 
     # Объединяем элементы в строку, разделяя пробелом
     table_string = join(t.array', " ")
     # Создаем JSON объект для отправки
@@ -212,9 +233,6 @@ function Equivalent(t::Table)
     response = HTTP.post(url, 
                          body=json_data, 
                          headers=["Content-Type" => "application/json"])
-    
-
-
     # Проверяем ответ
     if response.status == 200
         parsed_response = JSON.parse(String(response.body))
