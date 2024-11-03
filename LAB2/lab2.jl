@@ -10,9 +10,8 @@ mutable struct Table
     suffix::Vector{String}
     array::Matrix{Int64}
     alphabet::Vector{String}
-    contrs::Vector{String}
+    contrs::Set{String}
     WordsLenguage::Dict{String, Int}
-
 end
 
 function Table()
@@ -22,7 +21,7 @@ function Table()
         ["ε"],               # suffix
         fill(0, (3, 1)),     # array
         ["L", "R"],          # alphabet
-        [],                  # contrs
+        Set([]),                  # contrs
         Dict{String, Int}()  # WordsLenguage
     )
 end
@@ -64,24 +63,19 @@ function Add_Prefix(t::Table)
     return new_prefix
 end
 
-
-
 function fill_table(t::Table)
-    for i in 1:1
-        t.array[i,1] = MemberShip(t,t.main_prefix[i],t.suffix[1])
-    end
-    for i in 1:2
-        t.array[i+1,1] = MemberShip(t,t.non_main_prefix[i],t.suffix[1])
-    end
+    respList = MemberShipList(["ε","L","R"])
+    t.array .= reshape(respList,(3,1))
 end
 
 function Fill_table_prefix(t::Table,new_prefixes)
     sl = length(t.suffix)
     npl = length(new_prefixes)
-    temp = fill(0,(npl,sl))
     for i in 1:npl, j in 1:sl 
-        temp[i,j] = MemberShip(t,new_prefixes[i],t.suffix[j])
+        push!(WordList,CheckEps(new_prefixes[i],t.suffix[j]))
     end
+    respList = MemberShipList(WordList)
+    temp = reshape(respList,(npl,sl))
     t.non_main_prefix = union(t.non_main_prefix,new_prefixes)
     t.array = vcat(t.array,temp) 
 end
@@ -161,42 +155,34 @@ function fill_table(t::Table,start_suffix)
     lnp = length(t.non_main_prefix)
     ls = length(t.suffix)
     temp = fill(0,(lmp+lnp,ls-start_suffix+1))
-    
+    WordList =[]
     for i in 1:lmp
         index =1
         for j in start_suffix:ls
-        temp[i,index] =  MemberShip(t,t.main_prefix[i],t.suffix[j])
+            push!(WordList,CheckEps(t.main_prefix[i],t.suffix[j]))
         index +=1
         end
     end
     for i in 1:lnp
         index =1
         for j in start_suffix:ls
-        temp[lmp+i,index] =  MemberShip(t,t.non_main_prefix[i],t.suffix[j])
+            push!(WordList,CheckEps(t.non_main_prefix[i],t.suffix[j]))
         index +=1
         end
     end
+    respList = MemberShipList(WordList)
+    temp = reshape(respList,(lmp+lnp,ls-start_suffix+1))
     t.array = hcat(t.array,temp)
 end
 
 
 function MemberShip(t::Table,pref, suf)
-    # Обрабатываем случай, когда префикс или суффикс равен "ε"
-    if pref == "ε" && suf == "ε"
-        word = "ε"  # Оба "ε", возвращаем пустую строку
-    elseif pref == "ε"
-        word = suf  # Возвращаем только суффикс
-    elseif suf == "ε"
-        word = pref  # Возвращаем только префикс
-    else
-        word = pref * suf  # Соединяем префикс и суффикс
-    end
-    if haskey(t.WordsLenguage,word)
-        return t.WordsLenguage[word]
-    end
+    
     # Создаем JSON объект для отправки
     data = JSON.json(Dict("word" => word))
-
+    if word ∈ t.WordsLenguage
+        return t.WordsLenguage[word]
+    end
     # Выполняем POST-запрос
     url = "http://localhost:8095/checkWord"  # Убедитесь, что адрес правильный
     response = HTTP.post(url, 
@@ -215,8 +201,24 @@ function MemberShip(t::Table,pref, suf)
     end
 end
 
+function MemberShipList(words)
+    # Создаем JSON объект для отправки
+    data = JSON.json(Dict("word" => words))
+
+    # Выполняем POST-запрос
+    url = "http://localhost:8095/checkWord"  # Убедитесь, что адрес правильный
+    response = HTTP.post(url, 
+                         body=data, 
+                         headers=["Content-Type" => "application/json"])
+    # Проверяем ответ
+    if response.status == 200
+        parsed_response = JSON.parse(String(response.body))
+        return parsed_response["responseList"]
+    end
+end
+
 function Equivalent(t::Table)
- 
+    println("Start Equivalent")
     # Объединяем элементы в строку, разделяя пробелом
     table_string = join(t.array', " ")
     # Создаем JSON объект для отправки
@@ -233,14 +235,14 @@ function Equivalent(t::Table)
     response = HTTP.post(url, 
                          body=json_data, 
                          headers=["Content-Type" => "application/json"])
+    println("End Equivalent\n")
     # Проверяем ответ
     if response.status == 200
         parsed_response = JSON.parse(String(response.body))
         if isnothing(parsed_response["response"])
             println("Finish!!!")
             return false
-        elseif in(parsed_response["response"],t.contrs)
-            
+        elseif parsed_response["response"] in t.contrs
             return true
         else
             push!(t.contrs,parsed_response["response"])
@@ -249,6 +251,18 @@ function Equivalent(t::Table)
         end
     else
         println("Ошибка: $(response.status)")
+    end
+end
+
+function CheckEps(prefix,suffix)
+    if prefix == "ε" && suffix == "ε"
+        return "ε"  # Оба "ε", возвращаем пустую строку
+    elseif prefix == "ε"
+        return suffix  # Возвращаем только суффикс
+    elseif suffix == "ε"
+        return  prefix  # Возвращаем только префикс
+    else
+        return prefix * suffix  # Соединяем префикс и суффикс
     end
 end
 main()
