@@ -45,7 +45,7 @@ mutable struct Grammar
     Firsts::OrderedDict{String, OrderedSet{String}}  # Множество First для каждого нетерминала
     Follow::OrderedDict{String, OrderedSet{String}}  # Множество Follow для каждого нетерминала
 end
-
+```
 ## **Пример**
 
 ### Входная грамматика:
