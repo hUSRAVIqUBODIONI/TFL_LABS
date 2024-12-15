@@ -49,7 +49,9 @@ function eliminate_left_recursion(g::Grammar,grammar)
             Ǹ = N * "'"
             push!(g.N,Ǹ)
             g.P[Ǹ] = OrderedSet()
+            
             g.Firsts[Ǹ] = OrderedSet()
+            
             g.Follow[Ǹ] = OrderedSet()
             for prod in non_recursive
                 a = [prod*" "*Ǹ]
@@ -66,6 +68,7 @@ function eliminate_left_recursion(g::Grammar,grammar)
              end
         end
     end
+   
 end
 
 
@@ -73,9 +76,15 @@ function eliminate_right_factoring(g::Grammar)
     grammar = copy(g.P)
     empty!(g.P)
     for (N, Δ) ∈ grammar
+        
         common_prefix = OrderedDict()
-        for δ ∈ Δ  
-            first_symbol = δ[1]  
+        for δ ∈ Δ 
+            if length(δ) ==0
+                first_symbol = "ε"
+            else
+                first_symbol = δ[1]  
+            end
+           
             if !haskey(common_prefix,first_symbol)
                 common_prefix[first_symbol] = OrderedSet{Vector{String}}()
             end
@@ -85,26 +94,37 @@ function eliminate_right_factoring(g::Grammar)
             
             if length(Δ) >1
                 Ǹ = N *"`"
+                g.Firsts[Ǹ] = OrderedSet()
+                g.Follow[Ǹ] = OrderedSet()
+                push!(g.N,Ǹ)
                 if !haskey(g.P,N)
                     g.P[N] =  OrderedSet{Vector{String}}()
+                   
                 end
-                push!(g.P[N],split(prefix *" "*" "* Ǹ))
+                push!(g.P[N],split(prefix *" "* Ǹ))
                 if !haskey(g.P,Ǹ)
                     g.P[Ǹ] = OrderedSet{Vector{String}}()
                 end
                 for δ in Δ
-                    push!(g.P[Ǹ],δ[2:end])
+                    if length(δ) ==1
+                        push!(g.P[Ǹ],["ε"])
+                    else
+                        push!(g.P[Ǹ],δ[2:end])
+                    end
                 end
             else
                 if !haskey(g.P,N)
                     g.P[N] =  OrderedSet{Vector{String}}()
                 end
-
+                
                 g.P[N] = g.P[N] ∪ Δ
             end
+            
 
         end
     end
+
+    
 
 end
 
@@ -120,7 +140,7 @@ function find_first(g::Grammar)
     end
     # Инициализация множества First для каждого правила продукции
     for (N, Δ) ∈ g.P, δ ∈ Δ
-        if !isuppercase(δ[1][1]) # Если первый символ - терминал  
+        if length(δ)>0 && !isuppercase(δ[1][1]) # Если первый символ - терминал 
             push!(g.Firsts[N], δ[1])  # Добавляем терминал в First(T)
         end
     end
@@ -196,11 +216,15 @@ end
 
 function create_parser_table(g::Grammar)
     g.T = g.T ∪ ["%"]
+    
     for N ∈ g.N
         g.parse_table[N] =  Dict(T => OrderedSet() for T in g.T)
     end    
     # Fill the parsing table
     for (N, Δ) ∈ g.P, δ in Δ
+        if length(δ) ==0
+            break
+        end
         symbol = δ[1]
         if symbol ∈ g.T && symbol≠ "ε"
             if  isempty(g.parse_table[N][symbol])
@@ -260,20 +284,36 @@ function parse_word(g::Grammar,input_string)
     return true
 end
 
-
-
-
-
-
 function main()
     g = Grammar()
+
+
     grammar = OrderedDict(
-    "E" => ["E + T" , "T"],
-    "T" => ["T * F", "F"],
-    "F" => ["n", "( E )"]
+        "E" => ["E + T" , "T"],
+        "T" => ["T * F", "F"],
+        "F" => ["( E )"," n "]
+        )
+    #=
+    grammar = OrderedDict(
+    "S" => ["E a" , "E "],
+    "E" => ["b", "e"]
     )
+    =#
+
+
     eliminate_left_recursion(g,grammar)
+    
+    for (inner_key, inner_set) in g.P
+        println(" Key: $inner_key => $inner_set")
+    end
+    println()
+    println()
     eliminate_right_factoring(g)
+    for (inner_key, inner_set) in g.P
+        println(" Key: $inner_key => $inner_set")
+    end
+    println()
+
     find_first(g)
     for A ∈ g.N
         println(g.Firsts[A],A)
