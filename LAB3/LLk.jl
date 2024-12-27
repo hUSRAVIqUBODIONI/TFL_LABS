@@ -8,11 +8,12 @@ mutable struct Grammar
     parse_table::OrderedDict{String, OrderedDict{String,OrderedSet{Vector{String}}}}
     Firsts::OrderedDict{String, OrderedSet{String}}
     Follow::OrderedDict{String, OrderedSet{String}}
+    k::Int
 end
 
 
 
-function Grammar()
+function Grammar(k::Int)
     return Grammar(
         OrderedDict(),
         Set(),
@@ -20,13 +21,13 @@ function Grammar()
         OrderedDict(),
         OrderedDict(),
         OrderedDict(),
+        k,
     )
 end
 
 
 
 function eliminate_left_recursion(g::Grammar,grammar)
-   
     for (N, Δ) in grammar
         push!(g.N,N)
         left_recursive = []
@@ -34,9 +35,10 @@ function eliminate_left_recursion(g::Grammar,grammar)
         g.P[N] = OrderedSet()
         g.Firsts[N] = OrderedSet()
         g.Follow[N] = OrderedSet()
-
+        
         # Split productions into left-recursive and non-recursive
         for δ ∈ Δ
+            
             if string(δ[1]) == N
                 push!(left_recursive,δ[begin+1:end])
             else
@@ -44,14 +46,13 @@ function eliminate_left_recursion(g::Grammar,grammar)
             end
         end
         
+        
         if !isempty(left_recursive)
             # Create a new non-terminal
             Ǹ = N * "'"
             push!(g.N,Ǹ)
             g.P[Ǹ] = OrderedSet()
-            
             g.Firsts[Ǹ] = OrderedSet()
-            
             g.Follow[Ǹ] = OrderedSet()
             for prod in non_recursive
                 a = [prod*" "*Ǹ]
@@ -76,15 +77,14 @@ function eliminate_right_factoring(g::Grammar)
     grammar = copy(g.P)
     empty!(g.P)
     for (N, Δ) ∈ grammar
-        
+
         common_prefix = OrderedDict()
         for δ ∈ Δ 
             if length(δ) ==0
                 first_symbol = "ε"
             else
                 first_symbol = δ[1]  
-            end
-           
+            end       
             if !haskey(common_prefix,first_symbol)
                 common_prefix[first_symbol] = OrderedSet{Vector{String}}()
             end
@@ -115,102 +115,146 @@ function eliminate_right_factoring(g::Grammar)
             else
                 if !haskey(g.P,N)
                     g.P[N] =  OrderedSet{Vector{String}}()
-                end
-                
+                end            
                 g.P[N] = g.P[N] ∪ Δ
             end
-            
-
         end
     end
-
-    
-
 end
 
-
-function find_first(g::Grammar)
-   
-    # Вспомогательная функция для получения First для символа
-    function get_first(symbol)
-        if !isuppercase(symbol[1])  # Если символ - терминал
-            return OrderedSet([symbol])  # Возвращаем терминал как Set
-        end
-        return g.Firsts[symbol]  # Для нетерминала возвращаем его множество First
-    end
-    # Инициализация множества First для каждого правила продукции
-    for (N, Δ) ∈ g.P, δ ∈ Δ
-        if length(δ)>0 && !isuppercase(δ[1][1]) # Если первый символ - терминал 
-            push!(g.Firsts[N], δ[1])  # Добавляем терминал в First(T)
-        end
-    end
+function First_k(grammar::Grammar)
     changed = true
-    while changed
-        changed = false
-        for (N, Δ) ∈ reverse(collect(g.P)), δ ∈ Δ
-            cop = copy(g.Firsts[N])
-            for symbol in δ   
-                first_set_symbol = get_first(symbol)
+    function find_first(grammar::Grammar,Δ)
+        prefixes = Set(["ε"])
+
+        for a ∈ Δ
+            new_prefixes = OrderedSet()
+            if a == "ε"
+                new_prefixes = new_prefixes ∪ prefixes
                 
-                g.Firsts[N] = setdiff(g.Firsts[N] ∪ first_set_symbol, OrderedSet(["ε"]))  # Обновляем First(T)
-                if "ε" ∉ first_set_symbol  # Если первый символ не ε, то прерываем
-                    break
-                end
+                prefixes = new_prefixes
+                break
             end
-            if all(symbol -> in("ε", get_first(symbol)), δ)
-                push!(g.Firsts[N], "ε")  # Если все символы приводят к ε, добавляем ε в First(T)
-            end
-            if g.Firsts[N] != cop
-                changed = true
+            if a ∉ grammar.N
+                push!(grammar.T,a)
+                grammar.Firsts[a] = Base.get(grammar.Firsts, a, OrderedSet{String}([a]))
+                expansions = OrderedSet(a)
             else
-                changed = false
-            end   
-        end
-    end
-end
-
-
-function find_follow(g::Grammar)
-    g.Follow["E"] = g.Follow["E"] ∪  ["%"]
-   
-    function get_follow(T,δ,Nδ,changed)
-        for N ∈ Nδ
-            index = findfirst(c -> c == N, δ)
-            cop = copy(g.Follow[N])
-            if index != length(δ)    
-                γ = δ[index+1]
-                if γ == "ε"
-                g.Follow[N] =g.Follow[N] ∪ g.Follow[T]
-                elseif γ ∈ g.T  
-                    g.Follow[N] = g.Follow[N] ∪ OrderedSet([γ])
-                else        
-                    g.Follow[N] = setdiff(g.Follow[N] ∪ g.Firsts[γ], ["ε"])  # Обновляем First(T)
-                    if "ε" in  g.Firsts[γ]             
-                        g.Follow[N]= g.Follow[N] ∪ g.Follow[T]
+                expansions = grammar.Firsts[a]
+                println("|||||\t",expansions)
+            end
+            if !isempty(expansions)
+                for prefix ∈ prefixes
+                    combined_prefix = (prefix == "ε") ? "" : prefix
+                    if length(combined_prefix) >=grammar.k
+                        push!(new_prefixes, combined_prefix[1:grammar.k])
+                        continue
+                    end
+                    for expansion in expansions
+                        if expansion == "ε"
+                            # Не добавляем ничего, продолжаем
+                            push!(new_prefixes, isempty(combined_prefix) ? "ε" : combined_prefix)
+                        else
+                            combined = combined_prefix * expansion
+                          
+                            println("\t----",combined)
+                            push!(new_prefixes,(length(combined) >= grammar.k ? combined[1:grammar.k] : combined))
+                        end
                     end
                 end
             else
-                g.Follow[N] = g.Follow[N] ∪ g.Follow[T]
+                new_prefixes = OrderedSet()
             end
-            changed = cop != g.Follow[N]  
+            prefixes = new_prefixes
+            if all(length(prefix) >= grammar.k for prefix in prefixes)
+                break
+            end
+           
+            
         end
-        return changed
+        result =  OrderedSet(p for p in prefixes if length(p) <= grammar.k || p == "ε")
+        println("res: ",result)
+        return result
     end
-
-    changed = true
+    
     while changed
-        for (A, Δ) ∈ (g.P), δ ∈ Δ 
-            Nδ = OrderedSet()
-            for symbol ∈ δ
-                if symbol ∈ g.N
-                    push!(Nδ,symbol)
-                elseif !isuppercase(symbol[1])
-                    push!(g.T,symbol)
+        changed = false
+        for N ∈ grammar.N, Δ ∈ grammar.P[N] 
+            first_k = find_first(grammar,Δ)
+            for δ ∈ first_k
+                if δ ∉ grammar.Firsts[N]
+                    push!(grammar.Firsts[N],δ)
+                    changed = true
                 end
             end
-            changed = get_follow(A,δ,Nδ,changed) 
         end
+    
     end
+end
+
+
+
+function find_follow(g::Grammar)
+    changed = true
+    push!(g.Follow["S"],"%")
+    function get_follow(g::Grammar,beta)
+        result = OrderedSet(["ε"])
+        if isempty(beta)
+            return result
+        end
+        for symbol ∈ beta
+            new_result = OrderedSet()
+            for prefix ∈ result
+                combined_prefix = (prefix == "ε") ? "" : prefix
+                for s ∈ g.Firsts[symbol]
+                    if s == "ε"
+                        push!(new_result, isempty(combined_prefix) ? "ε" : combined_prefix)
+                    else
+                        combined = combined_prefix*s
+                        push!(new_result,(length(combined) >= g.k ? combined[1:g.k] : combined))
+                    end
+                end
+            end
+            result = new_result
+        end
+        if all("ε" ∈ g.Firsts[symbol] for symbol in beta)
+            push!(result,"ε")
+        end
+        result =  OrderedSet(p for p in result if length(p) <= g.k || p == "ε")
+        return result
+    end
+    
+    while changed
+        changed = false
+        for (N, Δ) ∈ g.P,δ ∈ Δ
+            for (i, B) in enumerate(δ) 
+                if B ∈ g.N
+                    beta = δ[i + 1:end]
+                    first_beta = get_follow(g,beta)
+                    before = length(g.Follow[B])
+    
+                        # Add FIRST_k(beta) without 'ε'
+                    for fb in first_beta
+                        if fb != "ε"
+                            push!(g.Follow[B], fb[1:min(g.k, end)])
+                        end
+                    end
+    
+                        # If FIRST(beta) contains 'ε' or beta is empty, add FOLLOW(A)
+                    if "ε" in first_beta || isempty(beta)
+                        for fN in g.Follow[N]
+                            push!(g.Follow[B], fN[1:min(g.k, end)])
+                        end
+                    end
+    
+                    after = length(g.Follow[B])
+                    if after > before
+                        changed = true
+                    end
+                end
+            end
+        end
+    end    
 end
 
 
@@ -254,6 +298,7 @@ function parse_word(g::Grammar,input_string)
     push!(stack,first(g.N))
     input_string = split(input_string)
     while !isempty(stack) && !isempty(input_string)
+        
         top = pop!(stack)
         if top ∈ g.N
             if input_string[1] ∈ g.T && !isempty(g.parse_table[top][input_string[1]])
@@ -281,26 +326,38 @@ function parse_word(g::Grammar,input_string)
         
         end
     end
+    if !isempty(stack) || !isempty(input_string)
     return true
+    end
 end
 
 function main()
-    g = Grammar()
+    g = Grammar(2)
+   
+  
+    grammar = OrderedDict(
+        "S" => ["H0 S" , "a"],
+        "H0" => ["H2 H1"],
+        "H1" => ["b"],
+        "H2" => ["H3 S"],
+        "H3" => ["a"]
+        )
+     #=
 
+    
+    OrderedSet{String}(["%", "b"])S
+    OrderedSet{String}(["a", "aa"])H0
+    OrderedSet{String}(["a", "aa"])H1
+    OrderedSet{String}(["b"])H2
+    OrderedSet{String}(["a", "aa"])H3
 
     grammar = OrderedDict(
         "E" => ["E + T" , "T"],
-        "T" => ["T * F", "F"],
-        "F" => ["( E )"," n "]
+        "T" => ["T * F", " F "],
+        "F" => ["( E )", " n "]
         )
-    #=
-    grammar = OrderedDict(
-    "S" => ["E a" , "E "],
-    "E" => ["b", "e"]
-    )
-    =#
 
-
+     =#
     eliminate_left_recursion(g,grammar)
     
     for (inner_key, inner_set) in g.P
@@ -313,12 +370,15 @@ function main()
         println(" Key: $inner_key => $inner_set")
     end
     println()
+    g.Firsts["ε"] = OrderedSet{String}(["ε"])
+   
+    First_k(g)
 
-    find_first(g)
     for A ∈ g.N
         println(g.Firsts[A],A)
     end
   
+    
     println()
     find_follow(g)
     for A ∈ g.N
@@ -335,9 +395,10 @@ function main()
     end
     println()
     
-    input_string = "n  * ( n + n )"
+    #input_string = "a a a a a a a a a a a a a a a c c c c c d d"
+    input_string ="n + ( n * ( n + n) )"
     println()
     println(parse_word(g,input_string))
-    
+   
 end
 main()
