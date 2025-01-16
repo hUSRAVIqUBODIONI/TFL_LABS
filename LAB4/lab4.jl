@@ -97,8 +97,11 @@ struct RefGroupNode
     id::Int
     in_groups::Vector{Int}
 end
+struct StarNode 
+    node 
+    star_groups::Vector{Int}
+end
 struct NonGroup node end
-struct StarNode node end
 struct CharNode char::String end
 struct AlterNode nodes::Vector end
 struct UnionNode nodes::Vector end
@@ -133,8 +136,8 @@ end
 function parse(parser::Parser)
     node = AltParser(parser)
     get(parser) !==nothing  && throw("Лишние символы после корректного выражения")
-    
-    ParseNodes(parser,node,Set(),false)
+
+    ParseNodes(parser,node,Set(),false,false)
 
     return node
 end
@@ -164,7 +167,7 @@ function StarParse(parser::Parser)
     node = BracketParse(parser)
     while get(parser) !==nothing && get(parser).type == "STAR"
         check(parser,"STAR")
-        node = StarNode(node)
+        node = StarNode(node,Vector())
     end
     return node
 end
@@ -191,7 +194,7 @@ function BracketParse(parser::Parser)
         check(parser,"CLOSE")
         return NonGroup(node)
     
-    elseif  token.type == "REF_GROUP_OPEN"
+    elseif  token.type == "REF_GROUP_OPEN"   
         check(parser,"REF_GROUP_OPEN")
         check(parser,"CLOSE")
         return  RefGroupNode(token.val,copy(parser.open_bracket))
@@ -201,7 +204,9 @@ function BracketParse(parser::Parser)
         return CharNode(token.val)
 
     elseif token.type == "REF_STR"
-        token.val ∈ parser.open_bracket  && throw("группа $(token.val) ещё не дочитана до конца к моменту обращения к ней")
+        token.val ∈ parser.open_bracket  && throw("сылка /$(token.val) ещё не дочитана до конца к моменту обращения к ней")
+        token.val > parser.groups && throw("Ссылка на не инициализированную строку /$(token.val)")
+          
         check(parser,"REF_STR")
         parser.ref_str[token.val] = Base.get(parser.ref_str, token.val, [])
         parser.ref_str[token.val] = vcat(parser.ref_str[token.val],parser.open_bracket)
@@ -212,40 +217,46 @@ function BracketParse(parser::Parser)
 end
 
 
-function ParseNodes(parser,node,defined_groups,in_alt)
+function ParseNodes(parser,node,defined_groups,in_alt,in_star)
     
     if isa(node,CharNode) || isa(node,RefStrNode)
         return defined_groups
 
     elseif isa(node,RefGroupNode)
-        check_is_init(parser,node)  && throw("Ссылка на группу $(node.id) ещё не дочитана до конца к моменту обращения к ней")
+        check_is_init(parser,node)  
         return defined_groups
 
 
     elseif isa(node,GroupNode)
-        if in_alt
+        if in_alt || in_star
             push!(parser.init_group,node.id)
         end
-        new_defined_groups = ParseNodes(parser,node.node,defined_groups,in_alt)
+        new_defined_groups = ParseNodes(parser,node.node,defined_groups,in_alt,in_star)
         push!(new_defined_groups,node.id)
         return new_defined_groups
 
-    elseif isa(node,NonGroup) || isa(node,StarNode)
-        return ParseNodes(parser,node.node,defined_groups,in_alt)
+    elseif isa(node,NonGroup) 
+        return ParseNodes(parser,node.node,defined_groups,in_alt,in_star)
+    elseif isa(node,StarNode)
+        in_star = true
+        node = ParseNodes(parser,node.node,defined_groups,in_alt,in_star)
+        in_star = false
+        return node
 
     elseif isa(node,UnionNode)
 
         current_defined = defined_groups
         for child ∈ node.nodes 
-            current_defined = ParseNodes(parser,child,current_defined,in_alt)
+            current_defined = ParseNodes(parser,child,current_defined,in_alt,in_star)
         end 
         return current_defined  
 
     elseif isa(node,AlterNode)
+
         all_sides = Vector()
         for child ∈ node.nodes
             in_alt = true 
-            child_sides = ParseNodes(parser,child,defined_groups,in_alt)
+            child_sides = ParseNodes(parser,child,defined_groups,in_alt,in_star)
             all_sides = all_sides ∪ child_sides
         end
         in_alt = false
@@ -256,13 +267,12 @@ function ParseNodes(parser,node,defined_groups,in_alt)
 end
 
 function check_is_init(parser::Parser,node)
-
     if isempty(parser.ref_str)
         return false
     end
     for (key,value) in parser.ref_str
-        if key ∈ node.in_groups && node.val ∈ value && !empty(value)
-            return true
+        if key ∈ node.in_groups && node.id ∈ value && !isempty(value)
+            throw("ссылка на неинициализированную группу /$(key)")
         end
     end
     return false
@@ -291,7 +301,6 @@ end
 
 function Cfg(cfg::CFG,node,start)
     if isa(node,CharNode) 
-        
         Ǹ =  start !==nothing ? start : "CH"*string(cfg.C)
         cfg.C +=1
         if !haskey(cfg.rules, Ǹ)
@@ -304,9 +313,9 @@ function Cfg(cfg::CFG,node,start)
     elseif isa(node,RefStrNode) 
         str_id = node.id
         if !haskey(cfg.ast,str_id)
-            throw("Ссылка на несуществующую строку")
+            throw("Ссылка на несуществующую строку /$(str_id)")
         elseif str_id  ∈ cfg.init_group
-            throw("Ссылка на не инициализированную строку")
+            throw("Ссылка на не инициализированную строку /$(str_id)")
         end
         if !haskey(cfg.N,str_id)
             cfg.N[str_id] = "RF"*string(str_id)
@@ -367,6 +376,8 @@ function Cfg(cfg::CFG,node,start)
         # R -> ε | R sub_nt
         cfg.rules[Ǹ] = Base.get(cfg.rules, Ǹ, [])
         push!(cfg.rules[Ǹ], [sub_Ǹ])
+        push!(cfg.rules[Ǹ], [Ǹ sub_Ǹ "| ε" ])
+        println("\t",typeof(cfg.rules[Ǹ]),node)
         return Ǹ
 
     elseif isa(node,UnionNode)
